@@ -6,6 +6,8 @@ import { useMocapStore } from '@/store/mocapStore';
 import { MediaPipeController, ExtendedHolisticResult } from '@/lib/mediapipeController';
 import { NormalizedLandmark } from '@mediapipe/tasks-vision';
 import Image from "next/image";
+import ParticleBackground from '@/components/ParticleBackground';
+import ChatInterface from '@/components/ChatInterface';
 
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -127,42 +129,74 @@ export default function Home() {
   };
 
   return (
-    <div className="container mx-auto p-4 flex flex-col items-center">
-      <h1 className="text-2xl font-bold mb-4">Physical Image - MoCap Demo</h1>
+    <div className="relative min-h-screen flex flex-col bg-gray-900 text-white overflow-hidden">
+      {/* パーティクル背景 */}
+      <ParticleBackground
+        particleColor="#ffffff"
+        background="transparent"
+        particleDensity={80}
+        speed={2}
+      />
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl">
-        <div className="relative w-full aspect-video bg-gray-800 rounded overflow-hidden">
-          <video ref={videoRef} className="w-full h-full object-cover" playsInline autoPlay muted />
-          <canvas ref={outputCanvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none" /> 
+      {/* ヘッダー */}
+      <header className="relative z-10 p-4 border-b border-gray-800 flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Sparkles Effect</h1>
+        <div className="flex items-center space-x-4">
+          {/* キャプチャー制御ボタン */}
+          <button
+            onClick={handleToggleCapture}
+            className={`px-4 py-2 rounded font-semibold transition-colors 
+              ${isCapturing ? 'bg-red-500 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'} 
+              text-white disabled:bg-gray-700`}
+            disabled={isMediaPipeLoading}
+          >
+            {isMediaPipeLoading ? "Loading..." : (isCapturing ? 'Stop Capture' : 'Start Capture')}
+          </button>
         </div>
-        <div className="w-full aspect-video bg-gray-700 rounded overflow-hidden">
-          {isCameraReady && !isMediaPipeLoading ? (
-            <SkeletonCanvas 
-              poseLandmarks={poseLandmarks}
-              leftHandLandmarks={leftHandLandmarks}
-              rightHandLandmarks={rightHandLandmarks}
-              faceLandmarks={faceLandmarks}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <p className="text-gray-400">
-                {isMediaPipeLoading ? "Loading MediaPipe..." : (isCameraReady ? "Ready for Skeleton" : "Initializing Camera...")}
-              </p>
-            </div>
+      </header>
+      
+      <div className="relative z-10 flex-1 flex flex-col md:flex-row p-4 gap-4">
+        {/* 説明テキスト */}
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-center z-0 pointer-events-none">
+          {!isCapturing && (
+            <p className="text-xl text-gray-400">
+              A beautiful particle animation that adds visual<br />
+              interest to your UI.
+            </p>
           )}
         </div>
-      </div>
-
-      <div className="mt-6 flex justify-center">
-        <button
-          onClick={handleToggleCapture}
-          className={`px-6 py-3 text-lg rounded font-semibold transition-colors 
-            ${isCapturing ? 'bg-red-500 hover:bg-red-700' : 'bg-green-500 hover:bg-green-700'} 
-            text-white disabled:bg-gray-400`}
-          disabled={isMediaPipeLoading}
-        >
-          {isMediaPipeLoading ? "Loading..." : (isCapturing ? 'Stop Capture' : 'Start Capture')}
-        </button>
+        
+        {/* 左側: チャットインターフェース */}
+        <div className="w-full md:w-1/2 bg-gray-800 bg-opacity-70 rounded-lg shadow-xl overflow-hidden z-10">
+          <ChatInterface />
+        </div>
+        
+        {/* 右側: モーションキャプチャー */}
+        <div className="w-full md:w-1/2 flex flex-col space-y-4 z-10">
+          {/* カメラとオーバーレイ */}
+          <div className="relative w-full aspect-video bg-gray-800 bg-opacity-70 rounded-lg shadow-xl overflow-hidden">
+            <video ref={videoRef} className="w-full h-full object-cover" playsInline autoPlay muted />
+            <canvas ref={outputCanvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none" /> 
+          </div>
+          
+          {/* スケルトンキャンバス */}
+          <div className="w-full aspect-video bg-gray-800 bg-opacity-70 rounded-lg shadow-xl overflow-hidden">
+            {isCameraReady && !isMediaPipeLoading ? (
+              <SkeletonCanvas 
+                poseLandmarks={poseLandmarks}
+                leftHandLandmarks={leftHandLandmarks}
+                rightHandLandmarks={rightHandLandmarks}
+                faceLandmarks={faceLandmarks}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <p className="text-gray-400">
+                  {isMediaPipeLoading ? "Loading MediaPipe..." : (isCameraReady ? "Ready for Skeleton" : "Initializing Camera...")}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
