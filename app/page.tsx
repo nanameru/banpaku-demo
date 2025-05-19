@@ -1,103 +1,169 @@
+'use client';
+
+import React, { useEffect, useRef, useState } from 'react';
+import SkeletonCanvas from '@/components/SkeletonCanvas';
+import { useMocapStore } from '@/store/mocapStore';
+import { MediaPipeController, ExtendedHolisticResult } from '@/lib/mediapipeController';
+import { NormalizedLandmark } from '@mediapipe/tasks-vision';
 import Image from "next/image";
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const outputCanvasRef = useRef<HTMLCanvasElement>(null);
+  const mediaPipeController = useRef<MediaPipeController | null>(null);
+  const { isCapturing, toggleCapturing, setLandmarks: setStoreLandmarks } = useMocapStore();
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isMediaPipeLoading, setIsMediaPipeLoading] = useState(false);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Separate states for different landmark groups
+  const [poseLandmarks, setPoseLandmarks] = useState<NormalizedLandmark[]>([]);
+  const [leftHandLandmarks, setLeftHandLandmarks] = useState<NormalizedLandmark[]>([]);
+  const [rightHandLandmarks, setRightHandLandmarks] = useState<NormalizedLandmark[]>([]);
+  // Adding face landmarks state
+  const [faceLandmarks, setFaceLandmarks] = useState<NormalizedLandmark[]>([]);
+
+  useEffect(() => {
+    mediaPipeController.current = new MediaPipeController();
+    return () => {
+      mediaPipeController.current?.stopProcessingLoop();
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  const handleResults = (results: ExtendedHolisticResult) => {
+    console.log("MocapPage: handleResults received:", results);
+    const allLmsForStore: NormalizedLandmark[] = [];
+    if (results.poseLandmarks && results.poseLandmarks.length > 0) { 
+      setPoseLandmarks(results.poseLandmarks);
+      allLmsForStore.push(...results.poseLandmarks);
+      console.log("MocapPage: Updated poseLandmarks state:", results.poseLandmarks);
+    } else {
+      setPoseLandmarks([]);
+      console.log("MocapPage: No poseLandmarks received or array is empty.");
+    }
+    // Process face landmarks
+    if (results.faceLandmarks && results.faceLandmarks.length > 0) { 
+      setFaceLandmarks(results.faceLandmarks);
+      allLmsForStore.push(...results.faceLandmarks);
+      console.log("MocapPage: Updated faceLandmarks state:", results.faceLandmarks);
+    } else {
+      setFaceLandmarks([]);
+      console.log("MocapPage: No faceLandmarks received or array is empty.");
+    }
+    if (results.leftHandLandmarks && results.leftHandLandmarks.length > 0) { 
+      setLeftHandLandmarks(results.leftHandLandmarks);
+      allLmsForStore.push(...results.leftHandLandmarks);
+      console.log("MocapPage: Updated leftHandLandmarks state:", results.leftHandLandmarks);
+    } else {
+      setLeftHandLandmarks([]);
+    }
+    if (results.rightHandLandmarks && results.rightHandLandmarks.length > 0) { 
+      setRightHandLandmarks(results.rightHandLandmarks);
+      allLmsForStore.push(...results.rightHandLandmarks);
+      console.log("MocapPage: Updated rightHandLandmarks state:", results.rightHandLandmarks);
+    } else {
+      setRightHandLandmarks([]);
+    }
+
+    if (allLmsForStore.length > 0) {
+      useMocapStore.getState().setLandmarks(allLmsForStore);
+    } else {
+      useMocapStore.getState().setLandmarks([]);
+    }
+  };
+
+  const setupCameraAndMediaPipe = async () => {
+    if (!videoRef.current || !outputCanvasRef.current || !mediaPipeController.current) return;
+    setIsMediaPipeLoading(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+      videoRef.current.srcObject = stream;
+      await new Promise<void>((resolve) => {
+        videoRef.current!.onloadedmetadata = () => {
+          setIsCameraReady(true);
+          videoRef.current?.play();
+          resolve();
+        };
+      });
+      
+      if (mediaPipeController.current && videoRef.current && outputCanvasRef.current) {
+        await mediaPipeController.current.initialize(
+          videoRef.current,
+          outputCanvasRef.current,
+          handleResults
+        );
+        console.log("MediaPipe Controller Initialized from Page");
+      } else {
+        console.error("Elements for MediaPipe initialization are not ready after video load.");
+      }
+      setIsMediaPipeLoading(false);
+    } catch (error) {
+      console.error('Error accessing webcam or initializing MediaPipe:', error);
+      setIsMediaPipeLoading(false);
+      alert("Could not access webcam. Please ensure permission is granted and try again.");
+    }
+  };
+
+  const handleToggleCapture = async () => {
+    if (!mediaPipeController.current) return;
+
+    if (!isCapturing) {
+      if (!isCameraReady || !mediaPipeController.current.getDrawingUtils()) {
+        await setupCameraAndMediaPipe();
+      }
+      if (mediaPipeController.current && mediaPipeController.current.getDrawingUtils()) {
+        mediaPipeController.current.startProcessingLoop();
+        toggleCapturing();
+      } else {
+        console.warn("MediaPipe not fully initialized yet, cannot start capture. Check logs from setupCameraAndMediaPipe.");
+      }
+    } else {
+      mediaPipeController.current.stopProcessingLoop();
+      toggleCapturing();
+    }
+  };
+
+  return (
+    <div className="container mx-auto p-4 flex flex-col items-center">
+      <h1 className="text-2xl font-bold mb-4">Physical Image - MoCap Demo</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-4xl">
+        <div className="relative w-full aspect-video bg-gray-800 rounded overflow-hidden">
+          <video ref={videoRef} className="w-full h-full object-cover" playsInline autoPlay muted />
+          <canvas ref={outputCanvasRef} className="absolute top-0 left-0 w-full h-full pointer-events-none" /> 
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        <div className="w-full aspect-video bg-gray-700 rounded overflow-hidden">
+          {isCameraReady && !isMediaPipeLoading ? (
+            <SkeletonCanvas 
+              poseLandmarks={poseLandmarks}
+              leftHandLandmarks={leftHandLandmarks}
+              rightHandLandmarks={rightHandLandmarks}
+              faceLandmarks={faceLandmarks}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <p className="text-gray-400">
+                {isMediaPipeLoading ? "Loading MediaPipe..." : (isCameraReady ? "Ready for Skeleton" : "Initializing Camera...")}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-6 flex justify-center">
+        <button
+          onClick={handleToggleCapture}
+          className={`px-6 py-3 text-lg rounded font-semibold transition-colors 
+            ${isCapturing ? 'bg-red-500 hover:bg-red-700' : 'bg-green-500 hover:bg-green-700'} 
+            text-white disabled:bg-gray-400`}
+          disabled={isMediaPipeLoading}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          {isMediaPipeLoading ? "Loading..." : (isCapturing ? 'Stop Capture' : 'Start Capture')}
+        </button>
+      </div>
     </div>
   );
 }
